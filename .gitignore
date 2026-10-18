@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.idea/
+.vscode/
+
+# Flutter build artifacts
+hsk5_quiz_app/.dart_tool/
+hsk5_quiz_app/build/
+hsk5_quiz_app/.flutter-plugins
+hsk5_quiz_app/.flutter-plugins-dependencies
