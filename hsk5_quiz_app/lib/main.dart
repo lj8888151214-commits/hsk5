@@ -32,7 +32,7 @@ class QuizScreen extends StatefulWidget {
 
 class _QuizScreenState extends State<QuizScreen> {
   //final String apiUrl = 'http://127.0.0.1:8000/api/v1/quiz/random';
-  final String apiUrl = 'http://192.168.30.2:8000/api/v1/quiz/random';
+  final String apiUrl = 'https://hsk5.onrender.com/api/v1/quiz/random';
 
   QuizQuestion? _question;
   bool _isLoading = true;
