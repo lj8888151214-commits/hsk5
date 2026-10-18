@@ -31,7 +31,6 @@ class QuizScreen extends StatefulWidget {
 }
 
 class _QuizScreenState extends State<QuizScreen> {
-  //final String apiUrl = 'http://127.0.0.1:8000/api/v1/quiz/random';
   final String apiUrl = 'https://hsk5.onrender.com/api/v1/quiz/random';
 
   QuizQuestion? _question;
@@ -326,7 +325,7 @@ class _QuizScreenState extends State<QuizScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isReviewMode ? '📖 HSK 5급 오답 복습 모드' : 'HSK 5급 단어 퀴즈'),
+        title: Text(_isReviewMode ? '📖 HSK 5급 오답 복습' : 'HSK 5급 단어 퀴즈'),
         centerTitle: true,
         backgroundColor: _isReviewMode
             ? Colors.orange.shade100
@@ -337,7 +336,7 @@ class _QuizScreenState extends State<QuizScreen> {
               onPressed: _exitReviewMode,
               icon: const Icon(Icons.close, color: Colors.deepOrange),
               label: const Text(
-                '일반 모드 복귀',
+                '복귀',
                 style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange),
               ),
             )
@@ -346,18 +345,17 @@ class _QuizScreenState extends State<QuizScreen> {
               onPressed: _showWrongAnswerDialog,
               icon: const Icon(Icons.menu_book, color: Colors.deepPurple),
               label: Text(
-                '오답노트 (${_wrongAnswers.length})',
+                '오답 (${_wrongAnswers.length})',
                 style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple),
               ),
             ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
         ],
       ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 500),
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 500),
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _question == null
@@ -372,117 +370,127 @@ class _QuizScreenState extends State<QuizScreen> {
                           ),
                         ],
                       )
-                    : Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              if (_isReviewMode)
-                                Chip(
-                                  label: Text(
-                                    '복습 진행: ${_reviewIndex + 1} / ${_reviewQueue.length}',
-                                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                    : SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                if (_isReviewMode)
+                                  Chip(
+                                    label: Text(
+                                      '복습: ${_reviewIndex + 1} / ${_reviewQueue.length}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    backgroundColor: Colors.deepOrange,
+                                    visualDensity: VisualDensity.compact,
+                                  )
+                                else
+                                  const SizedBox(),
+                                Text(
+                                  '점수: $_score / $_questionCount',
+                                  textAlign: TextAlign.right,
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.grey,
                                   ),
-                                  backgroundColor: Colors.deepOrange,
-                                )
-                              else
-                                const SizedBox(),
-                              Text(
-                                '점수: $_score / $_questionCount',
-                                textAlign: TextAlign.right,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Card(
+                              elevation: 3,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 24),
+                                child: Column(
+                                  children: [
+                                    Text(
+                                      _question!.hanzi,
+                                      style: const TextStyle(
+                                        fontSize: 42,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 2,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      _question!.pinyin,
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        color: Colors.grey.shade600,
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                          Card(
-                            elevation: 4,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
                             ),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 40),
-                              child: Column(
-                                children: [
-                                  Text(
-                                    _question!.hanzi,
+                            const SizedBox(height: 16),
+                            ..._question!.options.map((option) {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 5.0),
+                                child: OutlinedButton(
+                                  style: OutlinedButton.styleFrom(
+                                    backgroundColor: _getButtonColor(option.id),
+                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    side: BorderSide(
+                                      color: _selectedOptionId != null &&
+                                              option.id == _question!.answerId
+                                          ? Colors.green
+                                          : Colors.grey.shade300,
+                                      width: 1.5,
+                                    ),
+                                  ),
+                                  onPressed: () => _onOptionSelected(option.id),
+                                  child: Text(
+                                    option.text,
+                                    textAlign: TextAlign.center,
                                     style: const TextStyle(
-                                      fontSize: 48,
-                                      fontWeight: FontWeight.bold,
-                                      letterSpacing: 2,
+                                      fontSize: 16,
+                                      color: Colors.black87,
                                     ),
                                   ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    _question!.pinyin,
-                                    style: TextStyle(
-                                      fontSize: 20,
-                                      color: Colors.grey.shade600,
-                                      fontStyle: FontStyle.italic,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 32),
-                          ..._question!.options.map((option) {
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 6.0),
-                              child: OutlinedButton(
-                                style: OutlinedButton.styleFrom(
-                                  backgroundColor: _getButtonColor(option.id),
+                                ),
+                              );
+                            }),
+                            const SizedBox(height: 16),
+                            if (_selectedOptionId != null)
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: _isReviewMode
+                                      ? Colors.deepOrange
+                                      : Theme.of(context).colorScheme.primary,
+                                  foregroundColor: Colors.white,
                                   padding: const EdgeInsets.symmetric(vertical: 16),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),
-                                  side: BorderSide(
-                                    color: _selectedOptionId != null &&
-                                            option.id == _question!.answerId
-                                        ? Colors.green
-                                        : Colors.grey.shade300,
-                                    width: 1.5,
-                                  ),
                                 ),
-                                onPressed: () => _onOptionSelected(option.id),
+                                onPressed: _goToNext,
                                 child: Text(
-                                  option.text,
-                                  style: const TextStyle(
-                                    fontSize: 18,
-                                    color: Colors.black87,
-                                  ),
+                                  _isReviewMode && _reviewIndex == _reviewQueue.length - 1
+                                      ? '복습 완료하기'
+                                      : '다음 문제 ▶',
+                                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                                 ),
                               ),
-                            );
-                          }),
-                          const SizedBox(height: 24),
-                          if (_selectedOptionId != null)
-                            ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _isReviewMode
-                                    ? Colors.deepOrange
-                                    : Theme.of(context).colorScheme.primary,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              onPressed: _goToNext,
-                              child: Text(
-                                _isReviewMode && _reviewIndex == _reviewQueue.length - 1
-                                    ? '복습 완료하기'
-                                    : '다음 문제',
-                                style: const TextStyle(fontSize: 18),
-                              ),
-                            ),
-                        ],
+                            const SizedBox(height: 30),
+                          ],
+                        ),
                       ),
           ),
         ),
