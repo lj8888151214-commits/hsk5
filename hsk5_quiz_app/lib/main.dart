@@ -13,7 +13,7 @@ class HskQuizApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'HSK 5급 단어 퀴즈',
+      title: 'HSK 5급 단어 플래시카드',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
@@ -35,9 +35,20 @@ class _QuizScreenState extends State<QuizScreen> {
 
   QuizQuestion? _question;
   bool _isLoading = true;
-  int? _selectedOptionId;
+  bool _isAnswerRevealed = false; // 뜻 공개 여부 (블라인드 상태)
   int _score = 0;
   int _questionCount = 0;
+
+  // 정답 텍스트 추출 헬퍼
+  String get _correctMeaning {
+    if (_question == null) return '';
+    return _question!.options
+        .firstWhere(
+          (opt) => opt.id == _question!.answerId,
+          orElse: () => QuizOption(id: -1, text: '뜻을 불러올 수 없습니다.'),
+        )
+        .text;
+  }
 
   // 오답 목록
   final List<WrongAnswer> _wrongAnswers = [];
@@ -53,11 +64,11 @@ class _QuizScreenState extends State<QuizScreen> {
     _fetchNextQuestion();
   }
 
-  // 다음 문제 로드 (일반 모드 vs 복습 모드)
+  // 다음 문제 로드
   Future<void> _fetchNextQuestion() async {
     setState(() {
       _isLoading = true;
-      _selectedOptionId = null;
+      _isAnswerRevealed = false; // 새 단어 로드 시 다시 블라인드 처리
     });
 
     if (_isReviewMode) {
@@ -67,7 +78,6 @@ class _QuizScreenState extends State<QuizScreen> {
           _isLoading = false;
         });
       } else {
-        // 복습 완료 처리
         _showReviewCompleteDialog();
       }
       return;
@@ -99,44 +109,49 @@ class _QuizScreenState extends State<QuizScreen> {
     }
   }
 
-  void _onOptionSelected(int optionId) {
-    if (_selectedOptionId != null || _question == null) return;
+  // 블라인드 해제 (뜻 열기)
+  void _revealAnswer() {
+    if (!_isAnswerRevealed) {
+      setState(() {
+        _isAnswerRevealed = true;
+      });
+    }
+  }
 
+  // 정답 처리 (알고 있어요)
+  void _markAsKnown() {
     setState(() {
-      _selectedOptionId = optionId;
+      _questionCount++;
+      _score++;
+
+      if (_isReviewMode && _question != null) {
+        _wrongAnswers.removeWhere((item) => item.hanzi == _question!.hanzi);
+      }
+    });
+
+    _goToNext();
+  }
+
+  // 오답 처리 (헷갈려요)
+  void _markAsUnknown() {
+    setState(() {
       _questionCount++;
 
-      final isCorrect = (optionId == _question!.answerId);
-
-      if (isCorrect) {
-        _score++;
-        if (_isReviewMode) {
-          // 복습 모드에서 맞힌 단어는 오답 목록에서 자동 제거
-          _wrongAnswers.removeWhere((item) => item.hanzi == _question!.hanzi);
-        }
-      } else {
-        if (!_isReviewMode) {
-          // 일반 모드에서 틀린 경우 오답노트에 추가
-          final selectedText = _question!.options
-              .firstWhere((opt) => opt.id == optionId, orElse: () => QuizOption(id: -1, text: ''))
-              .text;
-          final correctText = _question!.options
-              .firstWhere((opt) => opt.id == _question!.answerId, orElse: () => QuizOption(id: -1, text: ''))
-              .text;
-
-          final isAlreadyAdded = _wrongAnswers.any((item) => item.hanzi == _question!.hanzi);
-          if (!isAlreadyAdded) {
-            _wrongAnswers.add(
-              WrongAnswer(
-                question: _question!,
-                selectedMeaning: selectedText,
-                correctMeaning: correctText,
-              ),
-            );
-          }
+      if (!_isReviewMode && _question != null) {
+        final isAlreadyAdded = _wrongAnswers.any((item) => item.hanzi == _question!.hanzi);
+        if (!isAlreadyAdded) {
+          _wrongAnswers.add(
+            WrongAnswer(
+              question: _question!,
+              selectedMeaning: '복습 필요',
+              correctMeaning: _correctMeaning,
+            ),
+          );
         }
       }
     });
+
+    _goToNext();
   }
 
   void _goToNext() {
@@ -204,20 +219,7 @@ class _QuizScreenState extends State<QuizScreen> {
     );
   }
 
-  Color _getButtonColor(int optionId) {
-    if (_selectedOptionId == null) {
-      return Colors.white;
-    }
-    if (optionId == _question!.answerId) {
-      return Colors.green.shade100;
-    }
-    if (optionId == _selectedOptionId) {
-      return Colors.red.shade100;
-    }
-    return Colors.white;
-  }
-
-  // 오답노트 모달 띄우기
+  // 오답노트 모달
   void _showWrongAnswerDialog() {
     showDialog(
       context: context,
@@ -268,18 +270,9 @@ class _QuizScreenState extends State<QuizScreen> {
                             ),
                             subtitle: Padding(
                               padding: const EdgeInsets.only(top: 4.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    '정답: ${item.correctMeaning}',
-                                    style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w600),
-                                  ),
-                                  Text(
-                                    '선택한 오답: ${item.selectedMeaning}',
-                                    style: const TextStyle(color: Colors.redAccent),
-                                  ),
-                                ],
+                              child: Text(
+                                '뜻: ${item.correctMeaning}',
+                                style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w600),
                               ),
                             ),
                             trailing: IconButton(
@@ -325,7 +318,7 @@ class _QuizScreenState extends State<QuizScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isReviewMode ? '📖 HSK 5급 오답 복습' : 'HSK 5급 단어 퀴즈'),
+        title: Text(_isReviewMode ? '📖 HSK 5급 오답 복습' : 'HSK 5급 단어 암기'),
         centerTitle: true,
         backgroundColor: _isReviewMode
             ? Colors.orange.shade100
@@ -376,6 +369,7 @@ class _QuizScreenState extends State<QuizScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
+                            // 상단 진행 상태
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
@@ -395,7 +389,7 @@ class _QuizScreenState extends State<QuizScreen> {
                                 else
                                   const SizedBox(),
                                 Text(
-                                  '점수: $_score / $_questionCount',
+                                  '암기 완료: $_score / $_questionCount',
                                   textAlign: TextAlign.right,
                                   style: const TextStyle(
                                     fontSize: 15,
@@ -405,29 +399,31 @@ class _QuizScreenState extends State<QuizScreen> {
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 16),
+
+                            // 메인 단어 카드 (한자 + 병음)
                             Card(
                               elevation: 3,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(16),
                               ),
                               child: Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 24),
+                                padding: const EdgeInsets.symmetric(vertical: 36),
                                 child: Column(
                                   children: [
                                     Text(
                                       _question!.hanzi,
                                       style: const TextStyle(
-                                        fontSize: 42,
+                                        fontSize: 46,
                                         fontWeight: FontWeight.bold,
                                         letterSpacing: 2,
                                       ),
                                     ),
-                                    const SizedBox(height: 6),
+                                    const SizedBox(height: 8),
                                     Text(
                                       _question!.pinyin,
                                       style: TextStyle(
-                                        fontSize: 18,
+                                        fontSize: 20,
                                         color: Colors.grey.shade600,
                                         fontStyle: FontStyle.italic,
                                       ),
@@ -436,56 +432,113 @@ class _QuizScreenState extends State<QuizScreen> {
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 16),
-                            ..._question!.options.map((option) {
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 5.0),
-                                child: OutlinedButton(
-                                  style: OutlinedButton.styleFrom(
-                                    backgroundColor: _getButtonColor(option.id),
-                                    padding: const EdgeInsets.symmetric(vertical: 14),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    side: BorderSide(
-                                      color: _selectedOptionId != null &&
-                                              option.id == _question!.answerId
-                                          ? Colors.green
-                                          : Colors.grey.shade300,
-                                      width: 1.5,
-                                    ),
-                                  ),
-                                  onPressed: () => _onOptionSelected(option.id),
-                                  child: Text(
-                                    option.text,
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      color: Colors.black87,
-                                    ),
+                            const SizedBox(height: 20),
+
+                            // 블라인드 한국어 뜻 영역 (터치하여 열기)
+                            InkWell(
+                              onTap: _revealAnswer,
+                              borderRadius: BorderRadius.circular(16),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 250),
+                                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                                decoration: BoxDecoration(
+                                  color: _isAnswerRevealed
+                                      ? Colors.deepPurple.shade50
+                                      : Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: _isAnswerRevealed
+                                        ? Colors.deepPurple.shade300
+                                        : Colors.grey.shade300,
+                                    width: 1.5,
                                   ),
                                 ),
-                              );
-                            }),
-                            const SizedBox(height: 16),
-                            if (_selectedOptionId != null)
-                              ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: _isReviewMode
-                                      ? Colors.deepOrange
-                                      : Theme.of(context).colorScheme.primary,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
+                                child: Center(
+                                  child: _isAnswerRevealed
+                                      ? Text(
+                                          _correctMeaning,
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(
+                                            fontSize: 22,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.deepPurple,
+                                          ),
+                                        )
+                                      : Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Icon(Icons.touch_app, color: Colors.grey.shade600, size: 24),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              '터치하여 한국어 뜻 확인',
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w600,
+                                                color: Colors.grey.shade600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                 ),
-                                onPressed: _goToNext,
+                              ),
+                            ),
+                            const SizedBox(height: 28),
+
+                            // 뜻을 확인한 후에만 나타나는 정답/오답 판정 버튼
+                            if (_isAnswerRevealed)
+                              Row(
+                                children: [
+                                  // 오답 버튼 (헷갈려요)
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.red.shade50,
+                                        foregroundColor: Colors.red.shade700,
+                                        side: BorderSide(color: Colors.red.shade300, width: 1.5),
+                                        padding: const EdgeInsets.symmetric(vertical: 16),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        elevation: 0,
+                                      ),
+                                      onPressed: _markAsUnknown,
+                                      icon: const Icon(Icons.close, size: 24),
+                                      label: const Text(
+                                        '헷갈려요 (오답)',
+                                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+
+                                  // 정답 버튼 (알고 있어요)
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.green.shade600,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(vertical: 16),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        elevation: 2,
+                                      ),
+                                      onPressed: _markAsKnown,
+                                      icon: const Icon(Icons.check, size: 24),
+                                      label: const Text(
+                                        '알고 있어요 (정답)',
+                                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            else
+                              // 뜻 확인 전 안내
+                              Center(
                                 child: Text(
-                                  _isReviewMode && _reviewIndex == _reviewQueue.length - 1
-                                      ? '복습 완료하기'
-                                      : '다음 문제 ▶',
-                                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                  '단어를 떠올려본 후 뜻을 열어보세요!',
+                                  style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
                                 ),
                               ),
                             const SizedBox(height: 30),
