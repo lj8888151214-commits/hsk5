@@ -29,31 +29,56 @@ class QuizQuestion {
 
   factory QuizQuestion.fromJson(Map<String, dynamic> json) {
     var rawOptions = json['options'] as List;
-    List<QuizOption> parsedOptions =
-        rawOptions.map((opt) => QuizOption.fromJson(opt as Map<String, dynamic>)).toList();
+    List<QuizOption> optionList =
+        rawOptions.map((opt) => QuizOption.fromJson(opt)).toList();
 
     return QuizQuestion(
       id: json['id'] as int,
       hanzi: json['hanzi'] as String,
       pinyin: json['pinyin'] as String,
-      options: parsedOptions,
+      options: optionList,
       answerId: json['answer_id'] as int,
     );
   }
 }
 
-// 오답노트 저장 및 복습용 모델
-class WrongAnswer {
-  final QuizQuestion question;
-  final String selectedMeaning;
-  final String correctMeaning;
+/// 백엔드 DB의 wrong_answers 테이블 대응 모델
+class DbWrongAnswer {
+  final int id; // wrong_answers PK (삭제 시 사용)
+  final int wordId; // words PK
+  final String hanzi;
+  final String pinyin;
+  final String meaning;
+  final int wrongCount;
 
-  WrongAnswer({
-    required this.question,
-    required this.selectedMeaning,
-    required this.correctMeaning,
+  DbWrongAnswer({
+    required this.id,
+    required this.wordId,
+    required this.hanzi,
+    required this.pinyin,
+    required this.meaning,
+    required this.wrongCount,
   });
 
-  String get hanzi => question.hanzi;
-  String get pinyin => question.pinyin;
+  factory DbWrongAnswer.fromJson(Map<String, dynamic> json) {
+    return DbWrongAnswer(
+      id: json['id'] as int,
+      wordId: json['word_id'] as int,
+      hanzi: json['hanzi'] as String,
+      pinyin: json['pinyin'] as String,
+      meaning: json['meaning'] as String,
+      wrongCount: json['wrong_count'] as int,
+    );
+  }
+
+  /// 복습 모드에서 QuizQuestion 형태로 재활용하기 위한 변환기
+  QuizQuestion toQuizQuestion() {
+    return QuizQuestion(
+      id: wordId,
+      hanzi: hanzi,
+      pinyin: pinyin,
+      options: [QuizOption(id: wordId, text: meaning)],
+      answerId: wordId,
+    );
+  }
 }

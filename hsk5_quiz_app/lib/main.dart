@@ -31,16 +31,24 @@ class QuizScreen extends StatefulWidget {
 }
 
 class _QuizScreenState extends State<QuizScreen> {
-  final String apiUrl = 'https://hsk5.onrender.com/api/v1/quiz/random';
+  final String baseUrl = 'https://hsk5.onrender.com';
 
   QuizQuestion? _question;
   bool _isLoading = true;
-  bool _isAnswerRevealed = false; // 뜻 공개 여부 (블라인드 상태)
+  bool _isAnswerRevealed = false;
   int _score = 0;
   int _questionCount = 0;
 
-  // 정답 텍스트 추출 헬퍼
-  String get _correctMeaning {
+  // DB에서 불러온 오답 목록
+  List<DbWrongAnswer> _wrongAnswers = [];
+
+  // 복습 모드 상태 관리
+  bool _isReviewMode = false;
+  List<DbWrongAnswer> _reviewQueue = [];
+  int _reviewIndex = 0;
+
+  // 현재 문제의 한국어 뜻 가져오기
+  String get _currentMeaning {
     if (_question == null) return '';
     return _question!.options
         .firstWhere(
@@ -50,31 +58,40 @@ class _QuizScreenState extends State<QuizScreen> {
         .text;
   }
 
-  // 오답 목록
-  final List<WrongAnswer> _wrongAnswers = [];
-
-  // 복습 모드 상태 관리
-  bool _isReviewMode = false;
-  List<WrongAnswer> _reviewQueue = [];
-  int _reviewIndex = 0;
-
   @override
   void initState() {
     super.initState();
     _fetchNextQuestion();
+    _fetchWrongAnswersFromDB(); // 앱 기동 시 DB 오답 목록 동기화
   }
 
-  // 다음 문제 로드
+  // 1. DB에서 오답 목록 불러오기
+  Future<void> _fetchWrongAnswersFromDB() async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/api/v1/wrong-answers'));
+      if (res.statusCode == 200) {
+        final List<dynamic> data = json.decode(utf8.decode(res.bodyBytes));
+        setState(() {
+          _wrongAnswers =
+              data.map((item) => DbWrongAnswer.fromJson(item)).toList();
+        });
+      }
+    } catch (e) {
+      debugPrint('오답 목록 로드 실패: $e');
+    }
+  }
+
+  // 2. 새 단어 로드
   Future<void> _fetchNextQuestion() async {
     setState(() {
       _isLoading = true;
-      _isAnswerRevealed = false; // 새 단어 로드 시 다시 블라인드 처리
+      _isAnswerRevealed = false;
     });
 
     if (_isReviewMode) {
       if (_reviewIndex < _reviewQueue.length) {
         setState(() {
-          _question = _reviewQueue[_reviewIndex].question;
+          _question = _reviewQueue[_reviewIndex].toQuizQuestion();
           _isLoading = false;
         });
       } else {
@@ -83,9 +100,9 @@ class _QuizScreenState extends State<QuizScreen> {
       return;
     }
 
-    // 일반 모드: 백엔드 API 호출
     try {
-      final response = await http.get(Uri.parse(apiUrl));
+      final response =
+          await http.get(Uri.parse('$baseUrl/api/v1/quiz/random'));
       if (response.statusCode == 200) {
         final decodedBody = utf8.decode(response.bodyBytes);
         final Map<String, dynamic> data = json.decode(decodedBody);
@@ -103,13 +120,13 @@ class _QuizScreenState extends State<QuizScreen> {
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('백엔드 연결 실패: $e')),
+          SnackBar(content: Text('단어 로드 실패: $e')),
         );
       }
     }
   }
 
-  // 블라인드 해제 (뜻 열기)
+  // 뜻 열기 (블라인드 해제)
   void _revealAnswer() {
     if (!_isAnswerRevealed) {
       setState(() {
@@ -118,38 +135,40 @@ class _QuizScreenState extends State<QuizScreen> {
     }
   }
 
-  // 정답 처리 (알고 있어요)
-  void _markAsKnown() {
+  // [알고 있어요 (정답)] 선택 시
+  void _markAsKnown() async {
     setState(() {
       _questionCount++;
       _score++;
-
-      if (_isReviewMode && _question != null) {
-        _wrongAnswers.removeWhere((item) => item.hanzi == _question!.hanzi);
-      }
     });
+
+    // 복습 모드에서 맞혔을 경우 DB에서 해당 오답 영구 삭제
+    if (_isReviewMode && _reviewIndex < _reviewQueue.length) {
+      final currentItem = _reviewQueue[_reviewIndex];
+      await _deleteWrongAnswer(currentItem.id, silent: true);
+    }
 
     _goToNext();
   }
 
-  // 오답 처리 (헷갈려요)
-  void _markAsUnknown() {
+  // [헷갈려요 (오답)] 선택 시 DB 저장
+  void _markAsUnknown() async {
     setState(() {
       _questionCount++;
-
-      if (!_isReviewMode && _question != null) {
-        final isAlreadyAdded = _wrongAnswers.any((item) => item.hanzi == _question!.hanzi);
-        if (!isAlreadyAdded) {
-          _wrongAnswers.add(
-            WrongAnswer(
-              question: _question!,
-              selectedMeaning: '복습 필요',
-              correctMeaning: _correctMeaning,
-            ),
-          );
-        }
-      }
     });
+
+    if (!_isReviewMode && _question != null) {
+      try {
+        await http.post(
+          Uri.parse('$baseUrl/api/v1/wrong-answers'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({'word_id': _question!.answerId}),
+        );
+        _fetchWrongAnswersFromDB(); // DB 저장 후 최신 상태 동기화
+      } catch (e) {
+        debugPrint('오답 DB 저장 실패: $e');
+      }
+    }
 
     _goToNext();
   }
@@ -161,7 +180,46 @@ class _QuizScreenState extends State<QuizScreen> {
     _fetchNextQuestion();
   }
 
-  // 복습 모드 시작
+  // 개별 오답 삭제 (DB 호출)
+  Future<void> _deleteWrongAnswer(int recordId, {bool silent = false}) async {
+    try {
+      final res = await http.delete(
+        Uri.parse('$baseUrl/api/v1/wrong-answers/$recordId'),
+      );
+      if (res.statusCode == 200) {
+        await _fetchWrongAnswersFromDB();
+        if (!silent && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('오답노트에서 삭제되었습니다.')),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('오답 삭제 실패: $e');
+    }
+  }
+
+  // 오답 전체 비우기 (DB 호출)
+  Future<void> _clearAllWrongAnswers() async {
+    try {
+      final res =
+          await http.delete(Uri.parse('$baseUrl/api/v1/wrong-answers'));
+      if (res.statusCode == 200) {
+        setState(() {
+          _wrongAnswers.clear();
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('오답노트가 초기화되었습니다.')),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('오답 전체 비우기 실패: $e');
+    }
+  }
+
+  // 복습 모드 진입
   void _startReviewMode() {
     if (_wrongAnswers.isEmpty) return;
 
@@ -176,7 +234,7 @@ class _QuizScreenState extends State<QuizScreen> {
     _fetchNextQuestion();
   }
 
-  // 일반 모드로 복귀
+  // 일반 모드 복귀
   void _exitReviewMode() {
     setState(() {
       _isReviewMode = false;
@@ -188,7 +246,7 @@ class _QuizScreenState extends State<QuizScreen> {
     _fetchNextQuestion();
   }
 
-  // 복습 완료 다이얼로그
+  // 복습 완료 팝업
   void _showReviewCompleteDialog() {
     showDialog(
       context: context,
@@ -233,13 +291,12 @@ class _QuizScreenState extends State<QuizScreen> {
                   Text('오답노트 (${_wrongAnswers.length}개)'),
                   if (_wrongAnswers.isNotEmpty)
                     TextButton(
-                      onPressed: () {
-                        setState(() {
-                          _wrongAnswers.clear();
-                        });
+                      onPressed: () async {
+                        await _clearAllWrongAnswers();
                         setDialogState(() {});
                       },
-                      child: const Text('전체 비우기', style: TextStyle(color: Colors.red)),
+                      child: const Text('전체 비우기',
+                          style: TextStyle(color: Colors.red)),
                     )
                 ],
               ),
@@ -247,7 +304,7 @@ class _QuizScreenState extends State<QuizScreen> {
                 width: double.maxFinite,
                 height: 400,
                 child: _wrongAnswers.isEmpty
-                    ? const Center(child: Text('틀린 단어가 없습니다. 완벽해요! 🎉'))
+                    ? const Center(child: Text('저장된 오답이 없습니다. 완벽해요! 🎉'))
                     : ListView.separated(
                         itemCount: _wrongAnswers.length,
                         separatorBuilder: (_, __) => const Divider(),
@@ -259,28 +316,48 @@ class _QuizScreenState extends State<QuizScreen> {
                               children: [
                                 Text(
                                   item.hanzi,
-                                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                                 const SizedBox(width: 8),
                                 Text(
                                   item.pinyin,
-                                  style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Chip(
+                                  label: Text(
+                                    '${item.wrongCount}회 틀림',
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.red,
+                                    ),
+                                  ),
+                                  backgroundColor: Colors.red.shade50,
+                                  visualDensity: VisualDensity.compact,
                                 ),
                               ],
                             ),
                             subtitle: Padding(
                               padding: const EdgeInsets.only(top: 4.0),
                               child: Text(
-                                '뜻: ${item.correctMeaning}',
-                                style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w600),
+                                '뜻: ${item.meaning}',
+                                style: const TextStyle(
+                                  color: Colors.green,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
                             trailing: IconButton(
-                              icon: const Icon(Icons.delete_outline, size: 20, color: Colors.grey),
-                              onPressed: () {
-                                setState(() {
-                                  _wrongAnswers.removeAt(index);
-                                });
+                              icon: const Icon(Icons.delete_outline,
+                                  size: 20, color: Colors.grey),
+                              onPressed: () async {
+                                await _deleteWrongAnswer(item.id);
                                 setDialogState(() {});
                               },
                             ),
@@ -330,7 +407,8 @@ class _QuizScreenState extends State<QuizScreen> {
               icon: const Icon(Icons.close, color: Colors.deepOrange),
               label: const Text(
                 '복귀',
-                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange),
+                style: TextStyle(
+                    fontWeight: FontWeight.bold, color: Colors.deepOrange),
               ),
             )
           else
@@ -339,7 +417,8 @@ class _QuizScreenState extends State<QuizScreen> {
               icon: const Icon(Icons.menu_book, color: Colors.deepPurple),
               label: Text(
                 '오답 (${_wrongAnswers.length})',
-                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple),
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, color: Colors.deepPurple),
               ),
             ),
           const SizedBox(width: 4),
@@ -365,7 +444,8 @@ class _QuizScreenState extends State<QuizScreen> {
                       )
                     : SingleChildScrollView(
                         physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20.0, vertical: 16.0),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
@@ -408,7 +488,8 @@ class _QuizScreenState extends State<QuizScreen> {
                                 borderRadius: BorderRadius.circular(16),
                               ),
                               child: Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 36),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 36),
                                 child: Column(
                                   children: [
                                     Text(
@@ -440,7 +521,8 @@ class _QuizScreenState extends State<QuizScreen> {
                               borderRadius: BorderRadius.circular(16),
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 250),
-                                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 24, horizontal: 16),
                                 decoration: BoxDecoration(
                                   color: _isAnswerRevealed
                                       ? Colors.deepPurple.shade50
@@ -456,7 +538,7 @@ class _QuizScreenState extends State<QuizScreen> {
                                 child: Center(
                                   child: _isAnswerRevealed
                                       ? Text(
-                                          _correctMeaning,
+                                          _currentMeaning,
                                           textAlign: TextAlign.center,
                                           style: const TextStyle(
                                             fontSize: 22,
@@ -465,9 +547,12 @@ class _QuizScreenState extends State<QuizScreen> {
                                           ),
                                         )
                                       : Row(
-                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
                                           children: [
-                                            Icon(Icons.touch_app, color: Colors.grey.shade600, size: 24),
+                                            Icon(Icons.touch_app,
+                                                color: Colors.grey.shade600,
+                                                size: 24),
                                             const SizedBox(width: 8),
                                             Text(
                                               '터치하여 한국어 뜻 확인',
@@ -494,10 +579,14 @@ class _QuizScreenState extends State<QuizScreen> {
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: Colors.red.shade50,
                                         foregroundColor: Colors.red.shade700,
-                                        side: BorderSide(color: Colors.red.shade300, width: 1.5),
-                                        padding: const EdgeInsets.symmetric(vertical: 16),
+                                        side: BorderSide(
+                                            color: Colors.red.shade300,
+                                            width: 1.5),
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 16),
                                         shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(12),
+                                          borderRadius:
+                                              BorderRadius.circular(12),
                                         ),
                                         elevation: 0,
                                       ),
@@ -505,7 +594,9 @@ class _QuizScreenState extends State<QuizScreen> {
                                       icon: const Icon(Icons.close, size: 24),
                                       label: const Text(
                                         '헷갈려요 (오답)',
-                                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                        style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold),
                                       ),
                                     ),
                                   ),
@@ -517,9 +608,11 @@ class _QuizScreenState extends State<QuizScreen> {
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: Colors.green.shade600,
                                         foregroundColor: Colors.white,
-                                        padding: const EdgeInsets.symmetric(vertical: 16),
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 16),
                                         shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(12),
+                                          borderRadius:
+                                              BorderRadius.circular(12),
                                         ),
                                         elevation: 2,
                                       ),
@@ -527,18 +620,21 @@ class _QuizScreenState extends State<QuizScreen> {
                                       icon: const Icon(Icons.check, size: 24),
                                       label: const Text(
                                         '알고 있어요 (정답)',
-                                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                        style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold),
                                       ),
                                     ),
                                   ),
                                 ],
                               )
                             else
-                              // 뜻 확인 전 안내
                               Center(
                                 child: Text(
                                   '단어를 떠올려본 후 뜻을 열어보세요!',
-                                  style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
+                                  style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.grey.shade500),
                                 ),
                               ),
                             const SizedBox(height: 30),
