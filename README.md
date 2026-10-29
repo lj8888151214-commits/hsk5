@@ -57,10 +57,7 @@
 | **4단계** | **모바일 반응형 최적화** | iPhone 등 소형 화면에서 하단 버튼 가림을 방지하기 위한 `SingleChildScrollView` 및 `SafeArea` 적용 |
 | **5단계** | **클라우드 배포 및 PWA 전환** | Render(백엔드) 및 Vercel(프론트엔드) 배포, iOS 홈 화면 추가 대응 |
 
-> 🌐 **배포 서비스 링크**
-> - **프론트엔드 (Vercel):** [https://hsk5-hsk5quizapp.vercel.app](https://hsk5-hsk5quizapp.vercel.app)
-> - **백엔드 API (Render):** [https://hsk5.onrender.com](https://hsk5.onrender.com)
-> - **API 문서 (Swagger UI):** [https://hsk5.onrender.com/docs](https://hsk5.onrender.com/docs)
+
 
 ---
 
