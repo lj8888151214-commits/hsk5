@@ -84,11 +84,19 @@
 
 ---
 
-### 📱 5. 주요 기능 화면
+#### 1. 📝 퀴즈 출제 & 정답 피드백
+> **실시간 퀴즈 풀이 및 즉각적인 정답/해설 피드백**
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/d4eca0cd-7b41-4691-a09d-0854c8335f0a" width="60%" alt="퀴즈 출제 & 정답 피드백" />
+</p>
 
-| 퀴즈 출제 & 정답 피드백 | 오답노트 모달 & 복습 모드 |
-| :---: | :---: |
-|<img width="1179" height="2556" alt="image" src="https://github.com/user-attachments/assets/d4eca0cd-7b41-4691-a09d-0854c8335f0a" />
+---
+
+#### 2. 📑 오답노트 모달 & 복습 모드
+> **틀린 문제 자동 수집 및 맞춤형 취약점 복습**
+<p align="center">
+  <img src="<img width="1179" height="2556" alt="image" src="https://github.com/user-attachments/assets/2e839bb4-044e-47c9-88be-21092b9847e2" width="60%" alt="오답노트 모달 & 복습 모드" />
+</p>
 
 
 ---
