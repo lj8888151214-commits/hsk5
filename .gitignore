@@ -1,0 +1,24 @@
+.venv/
+__pycache__/
+*.pyc
+.idea/
+.vscode/
+
+# Environment variables & secrets (절대 Git에 올리지 않음)
+.env
+.env.*
+!.env.example
+
+# Local SQLite database & Android signing keys
+*.db
+*.sqlite3
+*.jks
+*.keystore
+**/key.properties
+
+# Flutter build artifacts
+hsk5_quiz_app/.dart_tool/
+hsk5_quiz_app/build/
+hsk5_quiz_app/.flutter-plugins
+hsk5_quiz_app/.flutter-plugins-dependencies
+*.hprof
